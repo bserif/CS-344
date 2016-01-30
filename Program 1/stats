@@ -1,0 +1,204 @@
+#!/bin/bash
+
+#CS344 Program 1
+
+
+####################
+# global variables #
+####################
+
+average=""
+median=""
+input=""
+errorMessage="Usage: stats {-rows | -cols} [file]"
+readMessage="Stats: Can not read $2"
+
+
+######################################
+# temporary files and trap statement #
+######################################
+
+temp1=$$_tmp1
+temp2=$$_tmp2
+tempInput=$$_tmp3
+
+trap "rm -f $temp1 $temp2 $tempInput; exit 1" INT HUP TERM
+
+#############
+# functions #
+#############
+
+userCreateFile()
+{
+	while read line
+	do
+		echo -e "$line" >> $tempInput
+	done < /dev/stdin
+
+	input=$tempInput
+}
+######################
+# averageCalculation #
+######################
+# params:
+# $1: numberCount
+# $2: sum
+averageCalculation()
+{
+	#check for division by 0
+	if (($1 == 0))
+	then
+		average=""
+	else
+		((average = (($2 + ($1 / 2)) / $1 )))
+	fi
+}
+#####################
+# medianCalculation #
+#####################
+# params:
+# $1: numberCount
+# $2: values
+medianCalculation()
+{
+	#change to newlines for sort and then revert
+	sorted=$( echo $2 | tr " " "\n" | sort -g | tr "\n" " " )
+	middleNumber=$((($1 / 2) + 1))
+	median=$(echo $sorted | cut -d " " -f $middleNumber)	
+}
+
+
+rows()
+{
+	echo "Average	Median"
+
+	while read line
+	do
+		#change the tabs into newlines for the loop
+		values=$(echo $line | tr "\t" "\n")
+
+		numberCount=0
+		sum=0
+
+		#loop to calculate the sum and to increment numberCount
+		# to get the total number of values		
+		for num in $values
+		do
+			sum=$(expr $sum + $num)
+			((numberCount++))
+		done
+
+		averageCalculation $numberCount $sum
+		
+		#change the IFS to send $values with whitespace in it
+		# used this as first solution that matchedd what I was writing
+		# in the other functions. Realized I can quote the params
+		# in the called functions to avoid this.
+		#credit: ahmed.amayem.com/bash-passing-whitespace-as-parameters-to-functions/
+		tempIFS=$IFS
+		IFS=$''
+		medianCalculation $numberCount $values
+		IFS=$tempIFS
+
+		#Print Results
+		echo -e "$average\t$median"	
+
+	done < $input
+}
+
+
+columns()
+{
+	numberOfColumns=$(head -n 1 $input | wc -w)
+	
+	for i in $(seq 1 $numberOfColumns)
+	do
+		values=$(cut -f $i $input | tr "\t" "\n")
+
+		sum=0
+
+		for num in $values
+		do
+			sum=$(expr $sum + $num)
+		done
+
+		numberCount=($(echo $values | wc -w))
+
+		averageCalculation $numberCount $sum
+
+		tempIFS=$IFS
+		IFS=$''
+		medianCalculation $numberCount $values
+		IFS=$tempIFS
+
+		#store the results in the temps
+		if [ $i -eq 1 ]
+		then
+			echo $average >> $temp1
+			echo $median >> $temp2
+		else
+			sed -e "s/$/	$average/" -i $temp1
+			sed -e "s/$/	$median/" -i $temp2
+		fi
+	done
+	
+	#print the results
+	# check if the files are empty first
+	if [[ -s $input ]]
+	then
+		echo "Averages:"
+		cat $temp1
+		echo "Medians:"
+		cat $temp2
+	else
+		echo "Averages:"
+		echo "Medians:"
+	fi	
+};
+
+
+
+#check that we have the correct amount of arguments. If the wrong number of
+#	arguments is received then it will print out a usage/error message to the
+#	user and exit
+if [ "$#" -gt 2 ] || [ "$#" -lt 1 ]
+then
+	echo $errorMessage >&2
+	exit 1
+fi
+
+#this is a check to see if the user gave a file to be used in the command
+# execution. If it is blank then it will switch to manual user input. If it
+# is not blank it will then check if the file is readable. If it is it will
+# set the input file to the provided file. If it is not readable it will
+# display an error message with the correct usage instructions.
+
+if [ "$2" == "" ]
+then
+		userCreateFile
+else
+	if [ ! -r "$2" ]
+	then
+		echo $readMessage
+		exit 1
+	else
+		input=$2
+	fi
+fi
+
+#check if user wants rows or columns
+if [[ "$1" == -r* ]]
+then
+	rows
+elif [[ "$1" == -c* ]]
+then
+	columns
+else
+	echo $errorMessage >&2
+	exit 1
+fi
+
+#delete the temp files
+rm -f $temp1 $temp2 $tempInput
+
+exit 0			
